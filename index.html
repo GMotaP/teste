@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="auth.js?v=3"></script>
@@ -23,6 +23,13 @@
       <div class="brand__tag">
         <b>Dashboard</b>
         <span>Analytics de carregamento</span>
+      </div>
+    </div>
+    <div class="lastcharge" id="last-charge">
+      <span class="lastcharge__dot"></span>
+      <div class="lastcharge__txt">
+        <b>Última recarga</b>
+        <span id="last-charge-val">—</span>
       </div>
     </div>
     <div class="userbox">
@@ -40,10 +47,10 @@
 
     <!-- ===== Filtros ===== -->
     <div class="toolbar">
-      <div class="field"><label>Carregador</label><select id="f-carregador"></select></div>
-      <div class="field"><label>Local</label><select id="f-local"></select></div>
-      <div class="field"><label>Tipo</label><select id="f-tipo"></select></div>
-      <div class="field"><label>Pagamento</label><select id="f-pgto"></select></div>
+      <div class="field"><label>Carregador</label><div id="f-carregador"></div></div>
+      <div class="field"><label>Local</label><div id="f-local"></div></div>
+      <div class="field"><label>Tipo</label><div id="f-tipo"></div></div>
+      <div class="field"><label>Pagamento</label><div id="f-pgto"></div></div>
       <div class="field"><label>Data inicial</label><input type="date" id="f-de"></div>
       <div class="field"><label>Data final</label><input type="date" id="f-ate"></div>
     </div>
@@ -109,6 +116,12 @@
           <div><h3>Faturamento</h3><p class="c-sub">Valor pago, impostos/taxas (valor nosso) e líquido (diferença) por período</p></div>
         </div>
         <div class="chart-box"><canvas id="c-fat"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-fat" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card">
@@ -120,6 +133,12 @@
           </div>
         </div>
         <div class="chart-box"><canvas id="c-con"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-con" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card">
@@ -131,29 +150,72 @@
           </div>
         </div>
         <div class="chart-box"><canvas id="c-ses"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-ses" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card">
         <div class="chart-head"><div><h3>Ticket médio</h3><p class="c-sub">Faturamento ÷ nº de sessões (R$)</p></div></div>
         <div class="chart-box"><canvas id="c-tkt"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-tkt" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card">
         <div class="chart-head"><div><h3>Potência média</h3><p class="c-sub">Média de pot_max no período (W)</p></div></div>
         <div class="chart-box"><canvas id="c-pot"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-pot" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <div class="chart-card chart-wide">
         <div class="chart-head"><div><h3>Bateria</h3><p class="c-sub">% final, % inicial e diferença (carga ganha) — média das sessões</p></div></div>
         <div class="chart-box"><canvas id="c-bat"></canvas></div>
+        <div class="chart-foot">
+          <div class="type-toggle" data-chart="c-bat" title="Tipo de gráfico">
+            <button class="tt-btn active" data-type="line" aria-label="Linha"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tt-btn" data-type="bar" aria-label="Barras"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/></svg></button>
+          </div>
+        </div>
       </div>
 
+    </div>
+
+    <!-- ===== Histórico de recargas ===== -->
+    <div class="sec-row">
+      <div class="sec-title">Histórico de recargas</div>
+      <div class="tbl-info" id="tbl-info"></div>
+    </div>
+    <div class="table-card">
+      <div class="table-scroll">
+        <table class="rec-table" id="rec-table">
+          <thead><tr id="tbl-head"></tr></thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+      <div class="table-pager">
+        <button id="pg-prev" type="button">‹ Anterior</button>
+        <span id="pg-label"></span>
+        <button id="pg-next" type="button">Próxima ›</button>
+      </div>
     </div>
   </div>
 
   <div class="footer">PAY4CHARGE · dados via API · atualizado ao recarregar a página</div>
 </div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
