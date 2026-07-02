@@ -7,7 +7,6 @@
 const MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const DOW   = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];        // getDay() 0..6
 const DOW_ORDER = {1:0,2:1,3:2,4:3,5:4,6:5,0:6};                   // ordena Seg..Dom
-const ALL = "__todos__";
 
 // paleta dos gráficos
 const CL = {
@@ -42,25 +41,49 @@ function parseDate(s){                          // "17/06/2026"
     label:`${MESES[mm-1]}/${String(yy).slice(2)}`
   };
 }
+// "15:12:12", "15:12" ou Date serializada -> {sec, label}
+function parseHora(v){
+  if(v===null||v===undefined) return null;
+  const m = String(v).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if(!m) return null;
+  const h=+m[1], mi=+m[2], se=+(m[3]||0);
+  if(h>23||mi>59||se>59) return null;
+  return { sec:h*3600+mi*60+se, label:`${pad(h)}:${pad(mi)}:${pad(se)}` };
+}
+const fmtData = d => `${pad(d.dd)}/${pad(d.m)}/${d.y}`;
 const brl  = n => "R$ "+ (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const numf = (n,d=0) => (n||0).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const numf2 = n => (n||0).toLocaleString("pt-BR",{maximumFractionDigits:2});
 const val  = id => document.getElementById(id).value;
+const esc  = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const isCartao = p => String(p||"").toLowerCase().includes("cart");
 const isPix    = p => String(p||"").toLowerCase().includes("pix");
+function hexA(hex,a){
+  const m=String(hex).replace("#","");
+  return `rgba(${parseInt(m.substr(0,2),16)},${parseInt(m.substr(2,2),16)},${parseInt(m.substr(4,2),16)},${a})`;
+}
 
 // ---------- state ----------
 let RAW = [];
 let charts = {};
+let chartTypes = {};                              // id do canvas -> "line" | "bar"
 let modeCon = "total", modeSes = "total";        // toggle por gráfico
 let metricTipo = "sessoes", metricPgto = "sessoes"; // métrica das pizzas
 let dimGraf = "mensal";                           // dimensão temporal dos gráficos
+const MS = {};                                    // estado dos filtros multi-select
+let tblSort = { idx:0, dir:-1 };                  // tabela: coluna + direção (data desc)
+let tblPage = 1;
+const TBL_PER_PAGE = 15;
 
 // ---------- mapeamento da API ----------
 function mapRaw(data){
   return data.map(r=>{
     const d = parseDate(r.data);
+    const h = parseHora(r.hora);                 // coluna B: hora da recarga
     return {
       d,
+      hora: h ? h.label : "",
+      ts: d ? d.dt.getTime() + (h ? h.sec*1000 : 0) : 0,
       carregador: r.carregador||"—",
       local: r.origem||"—",
       tipo: r.tipo||"—",
@@ -117,49 +140,110 @@ function finishRender(statusEl){
   // inicializa os canvas com tamanho 0 (container oculto).
   statusEl.style.display = "none";
   document.getElementById("dash").style.display = "block";
+  updateLastCharge();
   buildFilters();
+  buildTableHead();
   setupControls();
   render();
 }
 
-// ---------- filtros ----------
-function fillSelect(id,values,withAll=true){
-  const sel=document.getElementById(id);
-  const opts = withAll ? [`<option value="${ALL}">Todos</option>`] : [];
-  values.forEach(v=>opts.push(`<option value="${v}">${v}</option>`));
-  sel.innerHTML=opts.join("");
+// ---------- última recarga (header) ----------
+function updateLastCharge(){
+  let best = null;
+  RAW.forEach(r=>{ if(!best || r.ts > best.ts) best = r; });
+  if(!best) return;
+  document.getElementById("last-charge-val").textContent =
+    fmtData(best.d) + (best.hora ? " · " + best.hora : "");
+  document.getElementById("last-charge").style.display = "inline-flex";
 }
+
+// ---------- filtros (multi-select) ----------
 function uniq(key){return [...new Set(RAW.map(r=>r[key]).filter(Boolean))].sort();}
 
+function buildMultiSelect(id, values){
+  const root = document.getElementById(id);
+  const st = { selected:new Set(), values };
+  MS[id] = st;
+  root.classList.add("ms");
+  root.innerHTML =
+    `<button type="button" class="ms-btn"><span class="ms-txt">Todos</span></button>
+     <div class="ms-panel">
+       <div class="ms-actions">
+         <button type="button" class="ms-all">Marcar todos</button>
+         <button type="button" class="ms-clear">Limpar</button>
+       </div>
+       <div class="ms-list">
+         ${values.map(v=>`<label class="ms-opt"><input type="checkbox" value="${esc(v)}"><span>${esc(v)}</span></label>`).join("")}
+       </div>
+     </div>`;
+  const txt = root.querySelector(".ms-txt");
+  function sync(){
+    const n = st.selected.size;
+    txt.textContent = (n===0 || n===values.length) ? "Todos"
+      : (n===1 ? [...st.selected][0] : n+" selecionados");
+  }
+  root.querySelector(".ms-btn").addEventListener("click", e=>{
+    e.stopPropagation();
+    document.querySelectorAll(".ms.open").forEach(m=>{ if(m!==root) m.classList.remove("open"); });
+    root.classList.toggle("open");
+  });
+  root.querySelector(".ms-panel").addEventListener("click", e=>e.stopPropagation());
+  root.querySelectorAll(".ms-opt input").forEach(cb=>cb.addEventListener("change",()=>{
+    cb.checked ? st.selected.add(cb.value) : st.selected.delete(cb.value);
+    sync(); onFilterChange();
+  }));
+  root.querySelector(".ms-all").addEventListener("click",()=>{
+    st.selected = new Set(values);
+    root.querySelectorAll(".ms-opt input").forEach(cb=>cb.checked=true);
+    sync(); onFilterChange();
+  });
+  root.querySelector(".ms-clear").addEventListener("click",()=>{
+    st.selected.clear();
+    root.querySelectorAll(".ms-opt input").forEach(cb=>cb.checked=false);
+    sync(); onFilterChange();
+  });
+}
+document.addEventListener("click",()=>
+  document.querySelectorAll(".ms.open").forEach(m=>m.classList.remove("open")));
+
 function buildFilters(){
-  fillSelect("f-carregador",uniq("carregador"));
-  fillSelect("f-local",uniq("local"));
-  fillSelect("f-tipo",uniq("tipo"));
-  fillSelect("f-pgto",uniq("pgto"));
+  buildMultiSelect("f-carregador", uniq("carregador"));
+  buildMultiSelect("f-local",      uniq("local"));
+  buildMultiSelect("f-tipo",       uniq("tipo"));
+  buildMultiSelect("f-pgto",       uniq("pgto"));
   // Datas: define limites pelo intervalo dos dados; valor vazio = período todo.
   const dayKeys=[...new Set(RAW.map(r=>r.d.dayKey))].sort();
   const de=document.getElementById("f-de"), ate=document.getElementById("f-ate");
   de.min=ate.min=dayKeys[0];
   de.max=ate.max=dayKeys[dayKeys.length-1];
-  ["f-carregador","f-local","f-tipo","f-pgto","f-de","f-ate"].forEach(id=>
-    document.getElementById(id).addEventListener("change",render));
+  ["f-de","f-ate"].forEach(id=>
+    document.getElementById(id).addEventListener("change", onFilterChange));
+}
+
+function onFilterChange(){ tblPage = 1; render(); }
+
+function msPass(id, v){
+  const st = MS[id];
+  if(!st) return true;
+  const n = st.selected.size;
+  if(n===0 || n===st.values.length) return true;  // nada/tudo marcado = sem filtro
+  return st.selected.has(v);
 }
 
 function applyFilters(){
-  const fc=val("f-carregador"),fl=val("f-local"),ft=val("f-tipo"),fp=val("f-pgto");
-  const de=val("f-de"),ate=val("f-ate");   // "YYYY-MM-DD" ou ""
+  const de=val("f-de"), ate=val("f-ate");   // "YYYY-MM-DD" ou ""
   return RAW.filter(r=>{
-    if(fc!==ALL && r.carregador!==fc) return false;
-    if(fl!==ALL && r.local!==fl) return false;
-    if(ft!==ALL && r.tipo!==ft) return false;
-    if(fp!==ALL && r.pgto!==fp) return false;
+    if(!msPass("f-carregador", r.carregador)) return false;
+    if(!msPass("f-local",      r.local))      return false;
+    if(!msPass("f-tipo",       r.tipo))       return false;
+    if(!msPass("f-pgto",       r.pgto))       return false;
     if(de && r.d.dayKey<de) return false;
     if(ate && r.d.dayKey>ate) return false;
     return true;
   });
 }
 
-// ---------- controles (toggles + métricas + dimensão) ----------
+// ---------- controles (toggles + métricas + dimensão + tabela) ----------
 function setupControls(){
   document.querySelectorAll(".seg").forEach(seg=>{
     const group = seg.dataset.group;
@@ -177,6 +261,26 @@ function setupControls(){
   document.getElementById("m-tipo").addEventListener("change",e=>{metricTipo=e.target.value;render();});
   document.getElementById("m-pgto").addEventListener("change",e=>{metricPgto=e.target.value;render();});
   document.getElementById("f-dim").addEventListener("change",e=>{dimGraf=e.target.value;render();});
+
+  // toggle linha/barra (canto inferior direito de cada card de evolução)
+  document.querySelectorAll(".type-toggle").forEach(tg=>{
+    const cid = tg.dataset.chart;
+    chartTypes[cid] = "line";
+    tg.querySelectorAll(".tt-btn").forEach(b=>b.addEventListener("click",()=>{
+      if(chartTypes[cid]===b.dataset.type) return;
+      tg.querySelectorAll(".tt-btn").forEach(x=>x.classList.toggle("active", x===b));
+      chartTypes[cid]=b.dataset.type;
+      render();
+    }));
+  });
+
+  // paginação da tabela
+  document.getElementById("pg-prev").addEventListener("click",()=>{
+    if(tblPage>1){ tblPage--; renderTable(applyFilters()); }
+  });
+  document.getElementById("pg-next").addEventListener("click",()=>{
+    tblPage++; renderTable(applyFilters());
+  });
 }
 
 // ---------- bucketização temporal ----------
@@ -300,8 +404,8 @@ function render(){
   pie("p-pgto", aggBy(rows,"pgto",metricPgto), metricPgto);
 
   /* ===== Gráficos ===== */
-  // Faturamento — 3 linhas
-  lineChart("c-fat", labels, [
+  // Faturamento — 3 séries
+  timeChart("c-fat", labels, [
     {label:"Valor pago",  data:M.map(m=>m.valor),          color:CL.pago},
     {label:"Valor nosso", data:M.map(m=>m.nosso),          color:CL.nosso},
     {label:"Líquido (dif.)", data:M.map(m=>m.valor-m.nosso), color:CL.dif}
@@ -313,7 +417,7 @@ function render(){
     : M.map(m=>m.consumo);
   document.getElementById("sub-con").textContent =
     modeCon==="media" ? "Consumo médio por sessão (kWh)" : "Soma de consumo (kWh)";
-  lineChart("c-con", labels, [{label:"Consumo", data:conData, color:CL.line}]);
+  timeChart("c-con", labels, [{label:"Consumo", data:conData, color:CL.line}]);
 
   // Sessões — total/média (por dia)
   const sesData = modeSes==="media"
@@ -321,22 +425,25 @@ function render(){
     : M.map(m=>m.sessoes);
   document.getElementById("sub-ses").textContent =
     modeSes==="media" ? "Média de sessões por dia" : "Quantidade de sessões";
-  lineChart("c-ses", labels, [{label:"Sessões", data:sesData, color:CL.line}]);
+  timeChart("c-ses", labels, [{label:"Sessões", data:sesData, color:CL.line}]);
 
   // Ticket médio
-  lineChart("c-tkt", labels, [{label:"Ticket médio",
+  timeChart("c-tkt", labels, [{label:"Ticket médio",
     data:M.map(m=>m.sessoes? m.valor/m.sessoes : 0), color:CL.line}], {money:true});
 
   // Potência média
-  lineChart("c-pot", labels, [{label:"Potência média",
+  timeChart("c-pot", labels, [{label:"Potência média",
     data:M.map(m=>m.potN? m.potSum/m.potN : 0), color:CL.line}]);
 
-  // Bateria — 3 linhas
-  lineChart("c-bat", labels, [
+  // Bateria — 3 séries
+  timeChart("c-bat", labels, [
     {label:"% final",   data:M.map(m=>m.batN? m.batFin/m.batN : 0),               color:CL.final},
     {label:"% inicial", data:M.map(m=>m.batN? m.batIni/m.batN : 0),               color:CL.inicial},
     {label:"Diferença", data:M.map(m=>m.batN? (m.batFin-m.batIni)/m.batN : 0),    color:CL.nosso}
   ], {legend:true});
+
+  /* ===== Tabela ===== */
+  renderTable(rows);
 }
 
 function sum(rows,k){return rows.reduce((a,r)=>a+(r[k]||0),0);}
@@ -347,12 +454,84 @@ function kpi(containerId,items){
      <div class="k-value">${value}</div><div class="k-sub">${sub||""}</div></div>`).join("");
 }
 
+// ---------- tabela de recargas ----------
+const TCOLS = [
+  {label:"Data",            cell:r=>fmtData(r.d),                                sort:r=>r.ts},
+  {label:"Hora",            cell:r=>r.hora||"—",                                 sort:r=>r.hora||""},
+  {label:"Tempo (min)",     cell:r=>r.temp!=null?numf2(r.temp):"—",              sort:r=>r.temp??-1, num:true},
+  {label:"Consumo (kWh)",   cell:r=>r.consumo!=null?numf2(r.consumo):"—",        sort:r=>r.consumo??-1, num:true},
+  {label:"Carregador",      cell:r=>esc(r.carregador),                           sort:r=>r.carregador},
+  {label:"Dia da semana",   cell:r=>esc(r.dia),                                  sort:r=>DOW_ORDER[r.d.dt.getDay()]},
+  {label:"Pot. máx. (W)",   cell:r=>r.pot!=null?numf2(r.pot):"—",                sort:r=>r.pot??-1, num:true},
+  {label:"Faturado",        cell:r=>brl(r.valor),                                sort:r=>r.valor??0, num:true, money:true},
+  {label:"Taxa",            cell:r=>brl(r.nosso),                                sort:r=>r.nosso??0, num:true, money:true},
+  {label:"Líquido",         cell:r=>brl((r.valor||0)-(r.nosso||0)),              sort:r=>(r.valor||0)-(r.nosso||0), num:true, money:true},
+  {label:"Pagamento",       cell:r=>esc(r.pgto),                                 sort:r=>r.pgto},
+  {label:"Local",           cell:r=>esc(r.local),                                sort:r=>r.local}
+];
+
+function buildTableHead(){
+  const tr = document.getElementById("tbl-head");
+  tr.innerHTML = TCOLS.map((c,i)=>
+    `<th data-i="${i}"${c.num?' class="num"':''}>${c.label} <span class="arrow"></span></th>`).join("");
+  tr.querySelectorAll("th").forEach(th=>th.addEventListener("click",()=>{
+    const i = +th.dataset.i;
+    if(tblSort.idx===i) tblSort.dir*=-1;
+    else { tblSort.idx=i; tblSort.dir = i===0 ? -1 : 1; }   // data começa desc
+    tblPage = 1;
+    renderTable(applyFilters());
+  }));
+}
+
+function renderTable(rows){
+  const c = TCOLS[tblSort.idx];
+  const sorted = rows.slice().sort((a,b)=>{
+    const va=c.sort(a), vb=c.sort(b);
+    let cmp;
+    if(typeof va==="string" || typeof vb==="string")
+      cmp = String(va).localeCompare(String(vb),"pt-BR");
+    else
+      cmp = va-vb;
+    return (cmp*tblSort.dir) || (b.ts-a.ts);   // desempate: mais recente primeiro
+  });
+
+  const total = sorted.length;
+  const pages = Math.max(1, Math.ceil(total/TBL_PER_PAGE));
+  if(tblPage>pages) tblPage=pages;
+  const start = (tblPage-1)*TBL_PER_PAGE;
+  const slice = sorted.slice(start, start+TBL_PER_PAGE);
+
+  document.getElementById("tbl-body").innerHTML = slice.length
+    ? slice.map(r=>"<tr>"+TCOLS.map(c=>
+        `<td class="${c.num?'num ':''}${c.money?'money':''}">${c.cell(r)}</td>`).join("")+"</tr>").join("")
+    : `<tr><td colspan="${TCOLS.length}" class="tbl-empty">Nenhuma recarga no filtro atual.</td></tr>`;
+
+  document.getElementById("tbl-info").textContent =
+    numf(total)+(total===1?" recarga":" recargas");
+  document.getElementById("pg-label").textContent = `Página ${tblPage} de ${pages}`;
+  document.getElementById("pg-prev").disabled = tblPage<=1;
+  document.getElementById("pg-next").disabled = tblPage>=pages;
+
+  document.querySelectorAll("#tbl-head th").forEach((th,i)=>{
+    th.classList.toggle("sorted", i===tblSort.idx);
+    th.querySelector(".arrow").textContent =
+      i===tblSort.idx ? (tblSort.dir===1?"↑":"↓") : "";
+  });
+}
+
 // ---------- charts ----------
-function lineChart(id, labels, datasets, opts={}){
+function timeChart(id, labels, datasets, opts={}){
   const ctx=document.getElementById(id);
   if(charts[id]) charts[id].destroy();
+  const type = chartTypes[id]||"line";
   const single = datasets.length===1;
   const ds = datasets.map(d=>{
+    if(type==="bar"){
+      return {label:d.label,data:d.data,
+        backgroundColor:hexA(d.color,.72),borderColor:d.color,
+        hoverBackgroundColor:d.color,
+        borderWidth:1,borderRadius:5,maxBarThickness:30};
+    }
     let bg=d.color;
     if(single){
       const g=ctx.getContext("2d").createLinearGradient(0,0,0,230);
@@ -365,7 +544,7 @@ function lineChart(id, labels, datasets, opts={}){
   });
   const money=!!opts.money;
   charts[id]=new Chart(ctx,{
-    type:"line",
+    type,
     data:{labels,datasets:ds},
     options:{responsive:true,maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
