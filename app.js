@@ -1,7 +1,7 @@
 /* app.js · PAY4CHARGE
    Requer auth.js (DATA_API, loadJSONP, asArray, getUserEmail, logout, allowedChargers).
    Sem sessão -> redireciona para login.html (nada é exibido).
-   Tema dos gráficos: escuro verde. */
+   Tema dos gráficos: escuro verde. ateste*/
 
 // ---------- helpers ----------
 const MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
